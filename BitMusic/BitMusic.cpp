@@ -2,50 +2,101 @@
 #include <stdint.h>
 #include <windows.h>
 #include <time.h>
+#include <iostream>
+#include <fstream>
 
-#define E 164.8
-#define G 196
-#define A 220
-#define H 246.9
-#define D 293.7
+#define _USE_MATH_DEFINES   // для использования M_PI, перед #include <math.h>
+#include <math.h>
 
-void playMelody(float freq[], int dur[], int length) 
+#define DURATION    10      //длительность мелодии в секундах
+#define SAMPLE_RATE 9000    //Частота дискретизации
+#define FILENAME "melody.wav"
+
+//структура для заголовка WAV файла
+struct WavHeader 
 {
-    for (int i = 0; i < length; i++) 
-    {
-        Beep(freq[i], dur[i]);
+    char chunkId[4];
+    uint32_t chunkSize;
+    char format[4];
+    char subchunk1Id[4];
+    uint32_t subchunk1Size;
+    uint16_t audioFormat;
+    uint16_t numChannels;
+    uint32_t sampleRate;
+    uint32_t byteRate;
+    uint16_t blockAlign;
+    uint16_t bitsPerSample;
+    char subchunk2Id[4];
+    uint32_t subchunk2Size;
+};
+
+
+void generate_sound_data(std::ofstream &out, const WavHeader &h) {
+
+    //массив для хранения семплов (частей аудиосигнала)
+    uint8_t *buffer = new uint8_t[DURATION * SAMPLE_RATE];
+    uint8_t output = 0;
+    uint32_t t = 0, current_sample = 0;
+
+    for (;; t++) {
+        output = t * (0xCA98 >> (t >> 9 & 14) & 15) | t >> 8;
+        //printf("%d ", output);
+
+        //формируем массив алгоритмом bytebeat
+        buffer[current_sample++] = output;
+
+        if (current_sample == DURATION * SAMPLE_RATE - 1) break;
     }
+
+    //записываем семплы в файл
+    out.write((char*)buffer, DURATION * SAMPLE_RATE);
 }
 
-int main()
-{
-    // Массивы для хранения частот и длительностей нот
-    float first_freq[] = { E / 2, G, A, H / 2, D };
-    int first_dur[] = { 600, 600, 300, 300, 600 };
+using std::ios;
 
+int main() {
+    //открываем файл для записи в бинарном режиме
+    std::ofstream out(FILENAME, ios::out | ios::binary);
 
-    float second_freq[] = { E / 2, G, E, D * 2, G * 2 };
-    int second_dur[] = { 150, 300, 750, 600, 600 };
+    //заполняем заголовок WAV файла
+    WavHeader header;
+    header.chunkId[0] = 'R';
+    header.chunkId[1] = 'I';
+    header.chunkId[2] = 'F';
+    header.chunkId[3] = 'F';
+    header.chunkSize = 36 + SAMPLE_RATE * DURATION; //размер файла - 36 байт + размер данных
+    header.format[0] = 'W';
+    header.format[1] = 'A';
+    header.format[2] = 'V';
+    header.format[3] = 'E';
+    header.subchunk1Id[0] = 'f';
+    header.subchunk1Id[1] = 'm';
+    header.subchunk1Id[2] = 't';
+    header.subchunk1Id[3] = ' ';
+    header.subchunk1Size = 16;         //размер подчиненного блока
+    header.audioFormat = (short)1;            //формат аудио (PCM)
+    header.numChannels = (short)1;            //количество каналов (моно)
+    header.sampleRate = SAMPLE_RATE;   //частота дискретизации
+    header.byteRate = SAMPLE_RATE * 2; //байт в секунду (SAMPLE_RATE * numChannels * bitsPerSample / 8)
+    header.blockAlign = (short)1;             //байт на сэмпл (numChannels * bitsPerSample / 8)
+    header.bitsPerSample = (short)8;         //бит на сэмпл
+    header.subchunk2Id[0] = 'd';
+    header.subchunk2Id[1] = 'a';
+    header.subchunk2Id[2] = 't';
+    header.subchunk2Id[3] = 'a';
+        // Размер данных - SAMPLE_RATE * DURATION * numChannels * bitsPerSample / 8
+    header.subchunk2Size = SAMPLE_RATE * DURATION;
+        
 
-    float third_freq[] = { E / 2, G, G * 3, D / 2 };
-    int third_dur[] = { 600, 750, 450, 600 };
+    //записываем заголовок в файл
+    out.write((char*)&header, sizeof(header));
 
-    srand(time(NULL)); // текущее время в качестве начального значения
-    while (1) 
-    {
-        int state = rand() % 3 + 1; //номер паттерна (1..3)
-        switch (state) 
-        {
-        case 1:
-            playMelody(first_freq, first_dur, sizeof(first_freq) / sizeof(first_freq[0]));
-            break;
-        case 2:
-            playMelody(second_freq, second_dur, sizeof(second_freq) / sizeof(second_freq[0]));
-            break;
-        case 3:
-            playMelody(third_freq, third_dur, sizeof(third_freq) / sizeof(third_freq[0]));
-            break;
-        }
-    }
+    generate_sound_data(out, header);
+
+    //закрываем файл
+    out.close();
+
+    PlaySound(L"melody.wav", NULL, SND_FILENAME | SND_SYNC);
+
     return 0;
 }
